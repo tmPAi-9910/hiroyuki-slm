@@ -6,7 +6,7 @@ Optimized for embedded devices (<500MB RAM, <1GB storage, 1 core)
 
 import json
 import random
-import os
+from pathlib import Path
 from typing import List, Optional, Dict, Tuple
 from collections import defaultdict
 
@@ -258,9 +258,10 @@ class HiroyukiChat:
 
 if __name__ == '__main__':
     # Test the SLM
+    base_path = Path(__file__).parent.resolve()
     chat = HiroyukiChat(
-        quotes_path='/home/engine/project/quotes.json',
-        responses_path='/home/engine/project/responces.json'
+        quotes_path=base_path / 'quotes.json',
+        responses_path=base_path / 'responces.json'
     )
     
     print("Tokenizer vocab size:", chat.tokenizer.vocab_size)
