@@ -258,9 +258,10 @@ class HiroyukiChat:
 
 if __name__ == '__main__':
     # Test the SLM
+    base_dir = Path(__file__).parent.resolve()
     chat = HiroyukiChat(
-        quotes_path='/home/engine/project/quotes.json',
-        responses_path='/home/engine/project/responces.json'
+        quotes_path=str(base_dir / 'quotes.json'),
+        responses_path=str(base_dir / 'responces.json')
     )
     
     print("Tokenizer vocab size:", chat.tokenizer.vocab_size)

@@ -7,6 +7,7 @@ Flask-based API for Hiroyuki-style chat responses
 import json
 import os
 import sys
+from pathlib import Path
 from flask import Flask, request, jsonify
 from slm_model import HiroyukiChat, load_quotes, load_responses
 
@@ -21,15 +22,9 @@ def init_chat():
     global chat_handler
     
     # Determine paths
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    quotes_path = os.path.join(base_dir, 'quotes.json')
-    responses_path = os.path.join(base_dir, 'responces.json')
-    
-    # Fallback to home/engine/project if files not in base_dir
-    if not os.path.exists(quotes_path):
-        quotes_path = '/home/engine/project/quotes.json'
-    if not os.path.exists(responses_path):
-        responses_path = '/home/engine/project/responces.json'
+    base_dir = Path(__file__).parent.resolve()
+    quotes_path = base_dir / 'quotes.json'
+    responses_path = base_dir / 'responces.json'
     
     print(f"Loading quotes from: {quotes_path}")
     print(f"Loading responses from: {responses_path}")
