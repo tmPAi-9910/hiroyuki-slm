@@ -7,6 +7,7 @@ Optimized for embedded devices (<500MB RAM, <1GB storage, 1 core)
 import json
 import random
 import os
+from pathlib import Path
 from typing import List, Optional, Dict, Tuple
 from collections import defaultdict
 
@@ -62,7 +63,7 @@ class NGramModel:
     Ultra-lightweight: ~100K parameters
     """
     
-    def __init__(self, n: int = 3):
+    def __init__(self, n: int = 5):
         self.n = n
         self.ngram_counts = defaultdict(lambda: defaultdict(int))
         self.context_counts = defaultdict(int)
@@ -109,7 +110,7 @@ class NGramModel:
     def generate(self, prompt: str, max_len: int = 50) -> str:
         """Generate text given a prompt"""
         context = ['<BOS>'] * (self.n - 1)
-        prompt_tokens = list(prompt)[-self.n+1:]
+        prompt_tokens = list(prompt)[-(self.n-1):]
         context = context[:-len(prompt_tokens)] + prompt_tokens
         
         result = list(prompt)
@@ -137,8 +138,8 @@ class HiroyukiSLM:
         self.tokenizer = SimpleTokenizer()
         self.tokenizer.build_vocab(quotes)
         
-        # Train n-gram model
-        self.ngram = NGramModel(n=3)
+        # Train n-gram model (5-gram for better coherence)
+        self.ngram = NGramModel(n=5)
         self.ngram.train(quotes)
         
         # Store quotes for direct matching fallback
@@ -162,17 +163,18 @@ class HiroyukiSLM:
         """Generate response"""
         # Use n-gram model for generation
         # Temperature affects randomness (0.8 is a good balance)
+        # n=5 requires n-1=4 context tokens
         
-        context = ['<BOS>'] * 2
-        prompt_tokens = list(prompt)[-2:]
+        context = ['<BOS>'] * 4
+        prompt_tokens = list(prompt)[-4:]
         context = context[:-len(prompt_tokens)] + prompt_tokens
         
         result = list(prompt_tokens)
         
         # Generation loop
         for _ in range(max_len):
-            # Get n-gram context
-            context_tuple = tuple(context[-2:])
+            # Get n-gram context (last 4 tokens for 5-gram)
+            context_tuple = tuple(context[-4:])
             
             # Sample from n-gram with temperature
             if context_tuple in self.ngram.ngram_counts:
@@ -187,8 +189,22 @@ class HiroyukiSLM:
                 # Sample
                 next_token = random.choices(list(counts.keys()), weights=probs)[0]
             else:
-                # Fallback to random quote
-                next_token = random.choice(self.quotes)[0] if self.quotes else '。'
+                # Fallback: try shorter context
+                found = False
+                for ctx_len in range(3, 0, -1):
+                    shorter_ctx = tuple(context[-ctx_len:])
+                    if shorter_ctx in self.ngram.ngram_counts:
+                        counts = self.ngram.ngram_counts[shorter_ctx]
+                        total = sum(counts.values())
+                        weights = [(c / total) ** (1.0 / temperature) for c in counts.values()]
+                        sum_weights = sum(weights)
+                        probs = [w / sum_weights for w in weights]
+                        next_token = random.choices(list(counts.keys()), weights=probs)[0]
+                        found = True
+                        break
+                if not found:
+                    # Fallback to random quote
+                    next_token = random.choice(self.quotes)[0] if self.quotes else '。'
                 
             if next_token == '<EOS>':
                 break
@@ -265,7 +281,7 @@ if __name__ == '__main__':
     )
     
     print("Tokenizer vocab size:", chat.tokenizer.vocab_size)
-    print("Model type: N-gram (3-gram)")
+    print("Model type: N-gram (5-gram)")
     print("\nTesting exact match...")
     print("  '嘘' ->", chat.get_exact_response("嘘"))
     print("  'データ' ->", chat.get_exact_response("データ"))
