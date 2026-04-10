@@ -22,9 +22,9 @@ def init_chat():
     global chat_handler
     
     # Determine paths
-    base_dir = Path(__file__).parent.resolve()
+    base_dir = Path(__file__).parent.resolve() / 'data'
     quotes_path = base_dir / 'quotes.json'
-    responses_path = base_dir / 'responces.json'
+    responses_path = base_dir / 'responses.json'
     
     print(f"Loading quotes from: {quotes_path}")
     print(f"Loading responses from: {responses_path}")
