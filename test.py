@@ -7,6 +7,8 @@ import requests
 import json
 import sys
 import time
+import argparse
+import subprocess
 
 
 API_BASE = "http://localhost:8080"
@@ -173,11 +175,24 @@ def run_all_tests():
 
 
 if __name__ == '__main__':
-    # Check if API is running locally
-    if len(sys.argv) > 1:
-        API_BASE = sys.argv[1]
-    else:
-        API_BASE = "http://localhost:8080"
+    parser = argparse.ArgumentParser(description='Test script for Hiroyuki SLM and API')
+    parser.add_argument('--standalone', action='store_true', help='Run API server, test, and shutdown')
+    parser.add_argument('--api-base', default='http://localhost:8080', help='API base URL')
+    args = parser.parse_args()
     
-    success = run_all_tests()
+    API_BASE = args.api_base
+    
+    if args.standalone:
+        print("Starting API server in standalone mode...")
+        server_process = subprocess.Popen([sys.executable, 'api.py'])
+        time.sleep(5)  # Wait for server to start
+        try:
+            success = run_all_tests()
+        finally:
+            print("Shutting down API server...")
+            server_process.terminate()
+            server_process.wait()
+    else:
+        success = run_all_tests()
+    
     sys.exit(0 if success else 1)
