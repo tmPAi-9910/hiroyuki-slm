@@ -1,11 +1,9 @@
 import asyncio
-
-from unsolth import FastLanguageModel
+import torch
 from peft import PeftModel
 
-
 # ひろゆき風の回答システムプロンプト
-HIROYUKI_SYSTEM_PROMPT = """\
+HIROYUKI_SYSTEM_PROMPT = """
 あなたは「ひろゆき風の話し方をするAI」です。
 
 以下の特徴を常に守って応答してください：
@@ -47,8 +45,7 @@ HIROYUKI_SYSTEM_PROMPT = """\
 ことで「ひろゆきっぽい返答」をすること。
 """
 
-
-class HiroyukiSLM(FastLanguageModel):
+class HiroyukiSLM:
     """ひろゆき風の話し方を学習した小規模言語モデル"""
 
     MODEL_NAME = "Qwen/Qwen2.5-0.5B-Instruct"
@@ -57,24 +54,55 @@ class HiroyukiSLM(FastLanguageModel):
 
     def __init__(self) -> None:
         """モデルとトークナイザーの初期化"""
-        super().__init__()
+        has_cuda = torch.cuda.is_available()
+        print(f"Initializing HiroyukiSLM - CUDA available: {has_cuda}")
 
-        # ベースモデルとトークナイザーをロード
-        model, tokenizer = self.from_pretrained(
-            model_name=self.MODEL_NAME,
-            max_seq_length=self.MAX_SEQ_LENGTH,
-            load_in_4bit=True,
-            device_map="auto",
+        if has_cuda:
+            try:
+                from unsloth import FastLanguageModel
+                print("Loading model with unsloth...")
+                model, tokenizer = FastLanguageModel.from_pretrained(
+                    model_name=self.MODEL_NAME,
+                    max_seq_length=self.MAX_SEQ_LENGTH,
+                    load_in_4bit=True,
+                    device_map="auto",
+                )
+                model = PeftModel.from_pretrained(model, self.ADAPTER_PATH)
+                FastLanguageModel.for_inference(model)
+                self.model = model
+                self.tokenizer = tokenizer
+                print("Unsloth model loaded successfully.")
+            except (ImportError, Exception) as e:
+                print(f"Unsloth loading failed ({e}), falling back to transformers")
+                self._load_with_transformers()
+        else:
+            self._load_with_transformers()
+
+    def _load_with_transformers(self):
+        from transformers import AutoModelForCausalLM, AutoTokenizer
+
+        print("Loading model with transformers (CPU fallback)...")
+
+        torch_dtype = torch.bfloat16 if torch.cpu.is_bf16_supported() else torch.float32
+
+        model = AutoModelForCausalLM.from_pretrained(
+            self.MODEL_NAME,
+            torch_dtype=torch_dtype,
+            device_map="cpu",
+            trust_remote_code=True,
         )
-
-        # アダプタを適用
         model = PeftModel.from_pretrained(model, self.ADAPTER_PATH)
 
-        # 推論モード に設定
-        self.for_inference(model)
+        tokenizer = AutoTokenizer.from_pretrained(
+            self.MODEL_NAME,
+            trust_remote_code=True,
+        )
+        if tokenizer.pad_token is None:
+            tokenizer.pad_token = tokenizer.eos_token
 
         self.model = model
         self.tokenizer = tokenizer
+        print("Transformers model loaded successfully.")
 
     async def generate(self, prompt: str) -> str:
         """
@@ -86,17 +114,23 @@ class HiroyukiSLM(FastLanguageModel):
         Returns:
             生成されたテキスト応答
         """
-
-        # メッセージの構築
         messages = [
             {"role": "system", "content": HIROYUKI_SYSTEM_PROMPT},
             {"role": "user", "content": prompt},
         ]
 
-        # トークン化
-        inputs = self.tokenizer(messages, return_tensors="pt").to(self.model.device)
+        # Chat template適用
+        text_prompt = self.tokenizer.apply_chat_template(
+            messages, 
+            tokenize=False, 
+            add_generation_prompt=True
+        )
 
-        # テキスト生成（重い処理をスレッドで実行）
+        inputs = self.tokenizer(text_prompt, return_tensors="pt")
+
+        device = next(self.model.parameters()).device
+        inputs = {k: v.to(device) for k, v in inputs.items()}
+
         outputs = await asyncio.to_thread(
             self.model.generate,
             **inputs,
@@ -105,14 +139,15 @@ class HiroyukiSLM(FastLanguageModel):
             top_p=0.9,
             repetition_penalty=1.1,
             do_sample=True,
+            pad_token_id=self.tokenizer.eos_token_id,
         )
 
-        # 出力をデコード（スレッドで実行）
-        decoded = await asyncio.to_thread(
-            self.tokenizer.decode, outputs[0], True
-        )
-
-        # アシスタントの応答部分を抽出
-        response = decoded.split("assistant:")[-1].strip()
+        # 生成部分のみデコード
+        input_length = inputs["input_ids"].shape[1]
+        generated_tokens = outputs[0][input_length : ]
+        response = self.tokenizer.decode(
+            generated_tokens, 
+            skip_special_tokens=True
+        ).strip()
 
         return response
