@@ -1,5 +1,3 @@
 #!/usr/bin/env bash
-echo \"Starting Hiroyuki-SLM...\"
-cd /home/engine/project
-source venv/bin/activate
+echo "Starting Hiroyuki-SLM..."
 python main.py
