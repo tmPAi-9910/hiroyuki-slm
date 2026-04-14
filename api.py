@@ -1,120 +1,42 @@
 #!/usr/bin/env python3
 """
 Hiroyuki SLM API Service
-Flask-based API for Hiroyuki-style chat responses
+FastAPI-based API for Hiroyuki-style chat responses
 """
 
-import json
-import os
-import sys
-from pathlib import Path
-from flask import Flask, request, jsonify
-from slm_model import HiroyukiChat, load_quotes, load_responses
+import logging
+from fastapi import FastAPI, HTTPException
+import uvicorn
+from pydantic import BaseModel
 
-app = Flask(__name__)
+from slm_model import HiroyukiSLM
 
-# Global chat handler
-chat_handler = None
+logger = logging.getLogger(__name__)
+app = FastAPI()
+slm = HiroyukiSLM()
 
+class ChatRequest(BaseModel):
+    message: str
 
-def init_chat():
-    """Initialize the chat handler"""
-    global chat_handler
-    
-    # Determine paths
-    base_dir = Path(__file__).parent.resolve() / 'data'
-    quotes_path = base_dir / 'quotes.json'
-    responses_path = base_dir / 'responses.json'
-    
-    print(f"Loading quotes from: {quotes_path}")
-    print(f"Loading responses from: {responses_path}")
-    
-    chat_handler = HiroyukiChat(quotes_path, responses_path)
-    print("Chat handler initialized successfully")
+class ChatResponse(BaseModel):
+    response: str
+    input: str
 
+@app.get("/health")
+async def health_check():
+    """APIのヘルスチェックエンドポイント"""
+    return {"status": "ok"}
 
-@app.route('/health', methods=['GET'])
-def health():
-    """Health check endpoint"""
-    return jsonify({
-        'status': 'healthy',
-        'model': 'hiroyuki-slm-4bit',
-        'version': '1.0.0'
-    })
-
-
-@app.route('/chat', methods=['POST'])
-def chat():
-    """
-    Chat endpoint
-    
-    Request body:
-    {
-        "message": "user input string"
-    }
-    
-    Response:
-    {
-        "response": "model output string"
-    }
-    """
+@app.post("/chat", response_model=ChatResponse)
+async def chat(request: ChatRequest):
+    """ユーザーのメッセージに対してひろゆき風の返答を生成するエンドポイント"""
     try:
-        data = request.get_json()
-        
-        if not data or 'message' not in data:
-            return jsonify({'error': 'Missing "message" field'}), 400
-            
-        user_message = data['message']
-        
-        if not isinstance(user_message, str):
-            return jsonify({'error': '"message" must be a string'}), 400
-            
-        # Generate response
-        response = chat_handler.generate_response(user_message)
-        
-        return jsonify({
-            'response': response,
-            'input': user_message
-        })
-        
+        response = await slm.generate(request.message)
+        return ChatResponse(response=response, input=request.message)
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        raise HTTPException(status_code=500, detail=str(e))
 
-
-@app.route('/chat/stream', methods=['POST'])
-def chat_stream():
-    """
-    Streaming chat endpoint (simple implementation - returns full response)
-    For production, would implement Server-Sent Events
-    """
-    return chat()
-
-
-@app.route('/models/info', methods=['GET'])
-def models_info():
-    """Get model information"""
-    return jsonify({
-        'model_name': 'hiroyuki-slm-4bit',
-        'quantization': '4-bit',
-        'parameters': '~2M',
-        'vocab_size': chat_handler.tokenizer.vocab_size,
-        'context_length': 32
-    })
-
-
-def create_app():
-    """Create and configure the Flask app"""
-    init_chat()
-    return app
-
-
-if __name__ == '__main__':
-    # Initialize chat handler
-    init_chat()
-    
-    # Run the server
-    port = int(os.environ.get('PORT', 8080))
-    debug = os.environ.get('DEBUG', 'false').lower() == 'true'
-    
-    print(f"Starting Hiroyuki SLM API on port {port}")
-    app.run(host='0.0.0.0', port=port, debug=debug)
+def start():
+    """APIサーバーの起動関数"""
+    logger.info("Starting Hiroyuki-SLM API server...")
+    uvicorn.run(app, host="0.0.0.0", port=8000)
