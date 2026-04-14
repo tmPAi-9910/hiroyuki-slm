@@ -1,9 +1,8 @@
-bitsandbytes>=0.43.2
-trl>=0.9.0
+torch
+transformers&gt;=4.45.0
 peft
-xformers
-triton
 accelerate
-datasets
 FastAPI
-uvicorn
+uvicorn[standard]
+trl&gt;=0.9.0
+datasets
