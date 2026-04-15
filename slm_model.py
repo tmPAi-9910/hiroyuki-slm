@@ -83,7 +83,10 @@ class HiroyukiSLM:
 
         print("Loading model with transformers (CPU fallback)...")
 
-        torch_dtype = torch.bfloat16 if torch.cpu.is_bf16_supported() else torch.float32
+        if hasattr(torch.cpu, "is_bf16_supported") and torch.cpu.is_bf16_supported():
+            torch_dtype = torch.bfloat16
+        else:
+            torch_dtype = torch.float32
 
         model = AutoModelForCausalLM.from_pretrained(
             self.MODEL_NAME,
