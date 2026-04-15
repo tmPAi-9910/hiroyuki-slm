@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
+set -e
+
 echo "Setting up Hiroyuki-SLM..."
+source venv/bin/activate
 
-# 一時的な措置
-bash sh/build.sh
-
-# 起動
 echo "Starting Hiroyuki-SLM..."
 python main.py
