@@ -1,6 +1,7 @@
 import asyncio
 import torch
-from peft import PeftModel
+import os
+from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 
 # ひろゆき風の回答システムプロンプト
 HIROYUKI_SYSTEM_PROMPT = """
@@ -46,76 +47,51 @@ HIROYUKI_SYSTEM_PROMPT = """
 """
 
 class HiroyukiSLM:
-    """ひろゆき風の話し方を学習した小規模言語モデル"""
+    """ひろゆき風の話し方を学習した小規模言語モデル（マージ済み＆量子化済み）"""
 
-    MODEL_NAME = "Qwen/Qwen2.5-0.5B-Instruct"
-    ADAPTER_PATH = "hiroyuki_adapter"
+    # Colabでマージ＆量子化してプッシュしたディレクトリを指定
+    # 環境変数 MODEL_PATH があればそれを使用、なければデフォルトパス
+    MODEL_PATH = os.environ.get("MODEL_PATH", "./models/qwen2.5-0.5b-hiroyuki-4bit")
     MAX_SEQ_LENGTH = 2048
 
     def __init__(self) -> None:
-        """モデルとトークナイザーの初期化"""
+        """マージ済み量子化モデルの読み込み"""
         has_cuda = torch.cuda.is_available()
         print(f"Initializing HiroyukiSLM - CUDA available: {has_cuda}")
+        print(f"Loading merged & quantized model from: {self.MODEL_PATH}")
 
-        if has_cuda:
-            try:
-                from unsloth import FastLanguageModel
-                print("Loading model with unsloth...")
-                model, tokenizer = FastLanguageModel.from_pretrained(
-                    model_name=self.MODEL_NAME,
-                    max_seq_length=self.MAX_SEQ_LENGTH,
-                    load_in_4bit=True,
-                    device_map="auto",
-                )
-                model = PeftModel.from_pretrained(model, self.ADAPTER_PATH)
-                FastLanguageModel.for_inference(model)
-                self.model = model
-                self.tokenizer = tokenizer
-                print("Unsloth model loaded successfully.")
-            except (ImportError, Exception) as e:
-                print(f"Unsloth loading failed ({e}), falling back to transformers")
-                self._load_with_transformers()
-        else:
-            self._load_with_transformers()
+        # 4bit量子化設定
+        bnb_config = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_quant_type="nf4",
+            bnb_4bit_compute_dtype=torch.float16 if has_cuda else torch.float32,
+            bnb_4bit_use_double_quant=True,
+        )
 
-    def _load_with_transformers(self):
-        from transformers import AutoModelForCausalLM, AutoTokenizer
+        device_map = "auto" if has_cuda else "cpu"
 
-        print("Loading model with transformers (CPU fallback)...")
+        # マージ済みモデルを直接読み込み（PeftModelは不要）
+        self.model = AutoModelForCausalLM.from_pretrained(
+            self.MODEL_PATH,
+            quantization_config=bnb_config if has_cuda else None,
+            device_map=device_map,
+            trust_remote_code=True,
+            torch_dtype=torch.float16 if has_cuda else torch.float32,
+        )
 
-        if hasattr(torch.cpu, "is_bf16_supported") and torch.cpu.is_bf16_supported():
-            torch_dtype = torch.bfloat16
-        else:
-            torch_dtype = torch.float32
-
-        model = AutoModelForCausalLM.from_pretrained(
-            self.MODEL_NAME,
-            torch_dtype=torch_dtype,
-            device_map="cpu",
+        self.tokenizer = AutoTokenizer.from_pretrained(
+            self.MODEL_PATH,
             trust_remote_code=True,
         )
-        model = PeftModel.from_pretrained(model, self.ADAPTER_PATH)
+        
+        if self.tokenizer.pad_token is None:
+            self.tokenizer.pad_token = self.tokenizer.eos_token
 
-        tokenizer = AutoTokenizer.from_pretrained(
-            self.MODEL_NAME,
-            trust_remote_code=True,
-        )
-        if tokenizer.pad_token is None:
-            tokenizer.pad_token = tokenizer.eos_token
-
-        self.model = model
-        self.tokenizer = tokenizer
-        print("Transformers model loaded successfully.")
+        print("Merged & Quantized model loaded successfully.")
 
     async def generate(self, prompt: str) -> str:
         """
         ユーザーのプロンプトに対してひろゆき風の回答を生成する
-
-        Args:
-            prompt: ユーザーの入力プロンプト
-
-        Returns:
-            生成されたテキスト応答
         """
         messages = [
             {"role": "system", "content": HIROYUKI_SYSTEM_PROMPT},
@@ -134,6 +110,7 @@ class HiroyukiSLM:
         device = next(self.model.parameters()).device
         inputs = {k: v.to(device) for k, v in inputs.items()}
 
+        # 生成処理
         outputs = await asyncio.to_thread(
             self.model.generate,
             **inputs,

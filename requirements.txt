@@ -1,13 +1,6 @@
 torch
 transformers>=4.45.0
-peft
 accelerate
 fastapi
 uvicorn[standard]
-trl>=0.9.0
-datasets
-
-# GPU (conditional in build.sh):
-# bitsandbytes>=0.43.2
-# xformers
-# triton
+bitsandbytes>=0.43.2
