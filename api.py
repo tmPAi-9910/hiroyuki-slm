@@ -1,8 +1,13 @@
 #!/usr/bin/env python3
+
 """
 Hiroyuki SLM API Service
 FastAPI-based API for Hiroyuki-style chat responses
 """
+
+"""
+NOT IN USE
+""""
 
 import logging
 from fastapi import FastAPI, HTTPException

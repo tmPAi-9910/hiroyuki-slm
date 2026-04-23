@@ -1,9 +1,12 @@
 import asyncio
 import torch
-import os
-from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+from transformers import AutoModelForCausalLM, AutoTokenizer
+from peft import PeftModel
 
-# ひろゆき風の回答システムプロンプト
+
+BASE_MODEL = "Qwen/Qwen2.5-0.5B-Instruct"
+LORA_MODEL = "tmpai/Hiroyuki-SLM-LoRA"
+
 HIROYUKI_SYSTEM_PROMPT = """
 あなたは「ひろゆき風の話し方をするAI」です。
 
@@ -47,61 +50,43 @@ HIROYUKI_SYSTEM_PROMPT = """
 """
 
 class HiroyukiSLM:
-    """ひろゆき風の話し方を学習した小規模言語モデル（マージ済み＆量子化済み）"""
-
-    # Colabでマージ＆量子化してプッシュしたディレクトリを指定
-    # 環境変数 MODEL_PATH があればそれを使用、なければデフォルトパス
-    MODEL_PATH = os.environ.get("MODEL_PATH", "./models/qwen2.5-0.5b-hiroyuki-4bit")
-    MAX_SEQ_LENGTH = 2048
-
     def __init__(self) -> None:
-        """マージ済み量子化モデルの読み込み"""
         has_cuda = torch.cuda.is_available()
-        print(f"Initializing HiroyukiSLM - CUDA available: {has_cuda}")
-        print(f"Loading merged & quantized model from: {self.MODEL_PATH}")
-
-        # 4bit量子化設定
-        bnb_config = BitsAndBytesConfig(
-            load_in_4bit=True,
-            bnb_4bit_quant_type="nf4",
-            bnb_4bit_compute_dtype=torch.float16 if has_cuda else torch.float32,
-            bnb_4bit_use_double_quant=True,
-        )
+        print(f"CUDA available: {has_cuda}")
 
         device_map = "auto" if has_cuda else "cpu"
 
-        # マージ済みモデルを直接読み込み（PeftModelは不要）
-        self.model = AutoModelForCausalLM.from_pretrained(
-            self.MODEL_PATH,
-            quantization_config=bnb_config if has_cuda else None,
+        self.tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL)
+
+        base_model = AutoModelForCausalLM.from_pretrained(
+            BASE_MODEL,
             device_map=device_map,
-            trust_remote_code=True,
             torch_dtype=torch.float16 if has_cuda else torch.float32,
         )
 
-        self.tokenizer = AutoTokenizer.from_pretrained(
-            self.MODEL_PATH,
-            trust_remote_code=True,
+        self.model = PeftModel.from_pretrained(
+            base_model,
+            LORA_MODEL
         )
-        
+
+        self.model = self.model.merge_and_unload()
+
+        self.model.eval()
+
         if self.tokenizer.pad_token is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
 
-        print("Merged & Quantized model loaded successfully.")
+        print("Model + LoRA loaded successfully.")
 
     async def generate(self, prompt: str) -> str:
-        """
-        ユーザーのプロンプトに対してひろゆき風の回答を生成する
-        """
         messages = [
             {"role": "system", "content": HIROYUKI_SYSTEM_PROMPT},
             {"role": "user", "content": prompt},
         ]
 
-        # Chat template適用
         text_prompt = self.tokenizer.apply_chat_template(
-            messages, 
-            tokenize=False, 
+            messages,
+            tokenize=False,
             add_generation_prompt=True
         )
 
@@ -110,23 +95,22 @@ class HiroyukiSLM:
         device = next(self.model.parameters()).device
         inputs = {k: v.to(device) for k, v in inputs.items()}
 
-        # 生成処理
         outputs = await asyncio.to_thread(
             self.model.generate,
             **inputs,
-            max_new_tokens=128,
-            temperature=0.75,
+            max_new_tokens=100,
+            temperature=0.7,
             top_p=0.9,
             repetition_penalty=1.1,
             do_sample=True,
             pad_token_id=self.tokenizer.eos_token_id,
         )
 
-        # 生成部分のみデコード
-        input_length = inputs["input_ids"].shape[1]
-        generated_tokens = outputs[0][input_length : ]
+        input_len = inputs["input_ids"].shape[1]
+        generated_tokens = outputs[0][input_len:]
+
         response = self.tokenizer.decode(
-            generated_tokens, 
+            generated_tokens,
             skip_special_tokens=True
         ).strip()
 

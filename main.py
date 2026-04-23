@@ -1,8 +1,10 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
+
 """
 Hiroyuki-SLM API Implementation
 This module implements the API endpoints for the Hiroyuki-SLM model using FastAPI.
 """
+
 import logging
 import api
 
