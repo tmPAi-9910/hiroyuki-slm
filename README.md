@@ -97,10 +97,10 @@ cp .env.example .env
 
 ```env
 # LoRA アダプターを適用する場合（ひろゆき風応答）
-USE_LORA=true
+USE_LORA=True
 
 # LoRA アダプターを適用しない場合（ベースモデルのみ）
-USE_LORA=false
+USE_LORA=False
 ```
 
 **デフォルト値**: `USE_LORA=true`（.env ファイルがない場合、LoRA が有効になります）
