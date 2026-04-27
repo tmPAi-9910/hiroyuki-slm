@@ -5,3 +5,4 @@ accelerate
 fastapi
 uvicorn[standard]
 bitsandbytes>=0.43.2
+python-dotenv

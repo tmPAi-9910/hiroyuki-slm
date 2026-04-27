@@ -1,11 +1,16 @@
 import asyncio
+import os
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from peft import PeftModel
+from dotenv import load_dotenv
 
 
 BASE_MODEL = "Qwen/Qwen2.5-0.5B-Instruct"
 LORA_MODEL = "tmpai/Hiroyuki-SLM-LoRA"
+
+load_dotenv()
+USE_LORA = os.getenv("USE_LORA", "true").lower() == "true"
 
 HIROYUKI_SYSTEM_PROMPT = """
 あなたは「ひろゆき風の話し方をするAI」です。
@@ -64,19 +69,21 @@ class HiroyukiSLM:
             torch_dtype=torch.float16 if has_cuda else torch.float32,
         )
 
-        self.model = PeftModel.from_pretrained(
-            base_model,
-            LORA_MODEL
-        )
-
-        self.model = self.model.merge_and_unload()
+        if USE_LORA:
+            self.model = PeftModel.from_pretrained(
+                base_model,
+                LORA_MODEL
+            )
+            self.model = self.model.merge_and_unload()
+            print("Model + LoRA loaded successfully.")
+        else:
+            self.model = base_model
+            print("Model loaded successfully (LoRA disabled).")
 
         self.model.eval()
 
         if self.tokenizer.pad_token is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
-
-        print("Model + LoRA loaded successfully.")
 
     async def generate(self, prompt: str) -> str:
         messages = [

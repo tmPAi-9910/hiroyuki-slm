@@ -83,6 +83,27 @@ pip install --no-deps -r requirements.txt
 
 ## 使い方
 
+### 環境変数設定
+
+`.env` ファイルを作成して、LoRA アダプターの適用を制御できます。
+
+```bash
+# .env.example をコピーして .env を作成
+cp .env.example .env
+```
+
+`.env` ファイルを編集して `USE_LORA` を設定します：
+
+```env
+# LoRA アダプターを適用する場合（ひろゆき風応答）
+USE_LORA=true
+
+# LoRA アダプターを適用しない場合（ベースモデルのみ）
+USE_LORA=false
+```
+
+**デフォルト値**: `USE_LORA=true`（.env ファイルがない場合、LoRA が有効になります）
+
 ### API サーバーの起動
 
 ```bash
