@@ -35,6 +35,7 @@ Unsloth を使用した効率的な学習と、PEFT/LoRA による軽量アダ�
 
 ```
 /hiroyuki-slm/
+├── .env                    # 環境変数
 ├── main.py                 # エントリーポイント
 ├── api.py                  # FastAPI アプリケーション
 ├── slm_model.py            # HiroyukiSLM モデル実装
